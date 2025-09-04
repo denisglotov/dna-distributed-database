@@ -1,0 +1,10 @@
+[package]
+name = "dna-distributed-database"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+blst = "0.3.15"
+clap = { version = "4.5.47", features = ["derive"] }
+hex = "0.4.3"
+rand = "0.9.2"
