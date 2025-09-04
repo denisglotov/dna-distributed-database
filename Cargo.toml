@@ -2,9 +2,13 @@
 name = "dna-distributed-database"
 version = "0.1.0"
 edition = "2024"
+default-run = "dna-distributed-database"
 
 [dependencies]
+async-trait = "0.1.89"
 blst = "0.3.15"
 clap = { version = "4.5.47", features = ["derive"] }
 hex = "0.4.3"
 rand = "0.9.2"
+tokio = { version = "1.47.1", features = ["full"] }
+

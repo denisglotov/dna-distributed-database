@@ -61,7 +61,7 @@ fn main() {
 }
 
 #[cfg(test)]
-mod agg_tests {
+mod tests {
     use blst::BLST_ERROR;
     use blst::min_pk::{AggregateSignature, PublicKey, SecretKey};
     use rand::RngCore;
