@@ -1,5 +1,6 @@
 use blst::min_pk::{PublicKey, SecretKey};
 use clap::{Parser, Subcommand};
+use dna_distributed_database::config::RawConfig;
 use rand::RngCore;
 
 /// CLI definition
@@ -22,6 +23,17 @@ enum Commands {
         /// Optional IKM (input keying material) as hex string (>=32 bytes)
         #[arg(long)]
         ikm: Option<String>,
+    },
+    GenConfig {
+        /// Path to config file
+        #[arg(long)]
+        config_prefix: Option<String>,
+        /// Number of nodes
+        #[arg(long)]
+        nodes: usize,
+        /// Number of users
+        #[arg(long)]
+        users: usize,
     },
 }
 
@@ -57,7 +69,62 @@ fn main() {
             println!("Private key (hex): {sk_hex}");
             println!("Public  key (hex): {pk_hex}");
         }
+        Commands::GenConfig {
+            config_prefix,
+            nodes,
+            users,
+        } => {
+            use std::fs::File;
+            use std::io::Write;
+
+            let config_prefix = config_prefix.unwrap_or_else(|| "config".to_string());
+            let mut node_keys = Vec::with_capacity(nodes);
+            for i in 0..nodes {
+                let mut ikm = [0u8; 32];
+                rand::rng().fill_bytes(&mut ikm);
+                let sk = SecretKey::key_gen(&ikm, format!("node-{i}").as_bytes())
+                    .expect("failed to generate node secret key");
+                write_secret_key(&sk, &(config_prefix.clone() + &format!("-node-{i}-sk.hex")));
+                let pk: PublicKey = sk.sk_to_pk();
+                node_keys.push(hex::encode(pk.to_bytes()));
+            }
+
+            let mut user_keys = Vec::with_capacity(users);
+            for i in 0..users {
+                let mut ikm = [0u8; 32];
+                rand::rng().fill_bytes(&mut ikm);
+                let sk = SecretKey::key_gen(&ikm, format!("user-{i}").as_bytes())
+                    .expect("failed to generate user secret key");
+                write_secret_key(&sk, &(config_prefix.clone() + &format!("-user-{i}-sk.hex")));
+                let pk: PublicKey = sk.sk_to_pk();
+                user_keys.push(hex::encode(pk.to_bytes()));
+            }
+
+            let raw = RawConfig {
+                nodes: node_keys,
+                users: user_keys,
+            };
+
+            let yaml_str = serde_yaml::to_string(&raw).expect("failed to serialize config to YAML");
+
+            let config_path = config_prefix + ".yaml";
+            let mut file = File::create(&config_path).expect("failed to create config file");
+            file.write_all(yaml_str.as_bytes())
+                .expect("failed to write config file");
+            println!("Config written to {}", config_path);
+        }
     }
+}
+
+fn write_secret_key(sk: &SecretKey, path: &str) {
+    use std::fs::File;
+    use std::io::Write;
+
+    let sk_hex = hex::encode(sk.to_bytes());
+    let mut file = File::create(path).expect("failed to create secret key file");
+    file.write_all(sk_hex.as_bytes())
+        .expect("failed to write secret key file");
+    println!("Secret key written to {}", path);
 }
 
 #[cfg(test)]
