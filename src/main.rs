@@ -1,17 +1,23 @@
 pub mod config;
 mod mock_network;
 pub mod network;
+mod node;
+pub mod utils;
 
-use crate::config::load_config;
-use crate::mock_network::MockNetwork;
-use crate::network::{Message, Network};
+use crate::{
+    config::{load_config, load_private_key},
+    mock_network::MockNetwork,
+    network::{Message, Network},
+    node::Node,
+};
+use tokio::task;
 use tracing::info;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let config = load_config("config.yaml")?;
+    let config = load_config("config/config.yaml")?;
     info!(
         "Loaded config for {} nodes and {} users",
         config.nodes.len(),
@@ -26,53 +32,23 @@ async fn main() -> anyhow::Result<()> {
         peer_rxs.push(Some(rx));
     }
 
-    let mut nodes = Vec::new();
+    let mut tasks = Vec::new();
     for i in 0..config.nodes.len() {
-        nodes.push(MockNetwork::new(
-            i,
-            peer_txs.clone(),
-            peer_rxs[i].take().unwrap(),
-        ));
+        let net = MockNetwork::new(i, peer_txs.clone(), peer_rxs[i].take());
+        let private_key_path = format!("config/config-node-{}-sk.hex", i);
+        let private_key = load_private_key(&private_key_path)?;
+        let node = Node::new(private_key, config.clone(), i);
+        tasks.push(task::spawn(async move { node.run(&net).await }));
     }
 
-    // Node 0 sends a message to Node 100
-    nodes[0]
-        .send(
-            1,
-            Message::UserUpdate {
-                from: 0,
-                request: network::UserUpdateRequest {
-                    user_public_key: "pubkey0".to_string(),
-                    nonce: 1,
-                    update: "Update from Node 0".to_string(),
-                    signature: "signature0".to_string(),
-                },
-            },
-        )
-        .await
-        .unwrap();
-    nodes[0]
-        .broadcast(Message::UserUpdate {
-            from: 0,
-            request: network::UserUpdateRequest {
-                user_public_key: "pubkey0".to_string(),
-                nonce: 2,
-                update: "Broadcast from Node 0".to_string(),
-                signature: "signature0".to_string(),
-            },
-        })
-        .await
-        .unwrap();
-    // Node 1 receives the message
-    if let Some((peer_id, msg)) = nodes[1].receive().await {
-        println!("Node 1 received from Node {}: {:?}", peer_id, msg);
+    let admin = MockNetwork::new(usize::MAX, peer_txs.clone(), None);
+
+    admin.broadcast(Message::Quit).await?;
+
+    for t in tasks {
+        let _ = t.await;
     }
-    if let Some((peer_id, msg)) = nodes[1].receive().await {
-        println!("Node 1 received from Node {}: {:?}", peer_id, msg);
-    }
-    // Node 2 receives the broadcast message
-    if let Some((peer_id, msg)) = nodes[2].receive().await {
-        println!("Node 2 received from Node {}: {:?}", peer_id, msg);
-    }
+
+    info!("All nodes shut down");
     Ok(())
 }

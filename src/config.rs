@@ -2,13 +2,17 @@ use anyhow::anyhow;
 use blst::min_pk::{PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
 
+// For BLS signatures, the domain separation tag.
+// DST per IETF BLS; use the canonical DST for G2 (min_pk).
+pub const DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_";
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RawConfig {
     pub nodes: Vec<String>, // list of node public keys in hex
     pub users: Vec<String>, // list of user public keys in key_hex
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub nodes: Vec<PublicKey>, // list of node public keys
     pub users: Vec<PublicKey>, // list of user public keys
@@ -39,10 +43,10 @@ fn parse_hex_key(hex_str: &str) -> anyhow::Result<PublicKey> {
     PublicKey::from_bytes(&key_bytes).map_err(|_| anyhow!("Invalid public key bytes"))
 }
 
-pub fn load_private_key(file_path: &str) -> Result<SecretKey, String> {
+pub fn load_private_key(file_path: &str) -> anyhow::Result<SecretKey> {
     let key_hex = std::fs::read_to_string(file_path)
-        .map_err(|e| format!("Failed to read private key file: {}", e))?;
+        .map_err(|e| anyhow!("Failed to read private key file: {}", e))?;
     let key_bytes = hex::decode(key_hex.trim())
-        .map_err(|e| format!("Failed to decode hex private key: {}", e))?;
-    SecretKey::from_bytes(&key_bytes).map_err(|_| "Invalid private key bytes".to_string())
+        .map_err(|e| anyhow!("Failed to decode hex private key: {}", e))?;
+    SecretKey::from_bytes(&key_bytes).map_err(|_| anyhow!("Invalid private key bytes"))
 }
