@@ -13,13 +13,13 @@ pub struct UserUpdateRequest {
     pub user_public_key: String,
     pub nonce: Nonce,
     pub update: String,
-    pub signature: String,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     UserUpdate {
         request: UserUpdateRequest,
+        signature: Signature,
     },
     Ack {
         request_hash: Hash,
@@ -30,7 +30,11 @@ pub enum Message {
         participants: Vec<PublicKey>,
         signature: Signature,
     },
-    Quit,
+    DebugUserRequestArrived {
+        request: UserUpdateRequest,
+        signature: Signature,
+    },
+    DebugQuit,
 }
 
 #[async_trait]

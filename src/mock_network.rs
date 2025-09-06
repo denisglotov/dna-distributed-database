@@ -5,10 +5,12 @@ use tokio::sync::{Mutex, mpsc};
 
 use crate::network::{Message, Network, PeerId};
 
+type MockNetworkPacket = (PeerId, Message);
+
 pub struct MockNetwork {
     peer_id: PeerId,
-    txs: Vec<mpsc::Sender<(PeerId, Message)>>, // send to peers
-    rx: Option<Arc<Mutex<mpsc::Receiver<(PeerId, Message)>>>>, // receive from peers
+    txs: Vec<mpsc::Sender<MockNetworkPacket>>, // send to peers
+    rx: Option<Arc<Mutex<mpsc::Receiver<MockNetworkPacket>>>>, // receive from peers
 }
 
 impl MockNetwork {
@@ -35,10 +37,8 @@ impl Network for MockNetwork {
     }
 
     async fn broadcast(&self, msg: Message) -> anyhow::Result<()> {
-        for (i, tx) in self.txs.iter().enumerate() {
-            if i != self.peer_id {
-                let _ = tx.send((self.peer_id, msg.clone())).await;
-            }
+        for tx in &self.txs {
+            let _ = tx.send((self.peer_id, msg.clone())).await;
         }
         Ok(())
     }

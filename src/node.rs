@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use anyhow::anyhow;
 use blst::min_pk::{PublicKey, SecretKey, Signature};
 use dashmap::{DashMap, Entry};
 use tracing::{debug, info, warn};
@@ -59,22 +60,33 @@ impl Node {
         loop {
             if let Some((peer_id, msg)) = net.receive().await {
                 match msg {
-                    Message::UserUpdate { request } => {
+                    Message::UserUpdate { request, signature } => {
                         debug!(node_index, "Received UserUpdate from {}", peer_id);
                         if !self.users.contains(&request.user_public_key) {
-                            warn!("Unknown user {}", request.user_public_key);
+                            warn!(node_index, "Unknown user {}", request.user_public_key);
+                            continue;
+                        }
+                        if peer_id >= self.nodes.len() {
+                            warn!(node_index, "Invalid peer_id {}", peer_id);
                             continue;
                         }
 
                         // Verify signature
-                        let user_pk_bytes = hex::decode(&request.user_public_key).unwrap();
-                        let user_pk = PublicKey::from_bytes(&user_pk_bytes).unwrap();
-                        let sig_bytes = hex::decode(&request.signature).unwrap();
-                        let signature = Signature::from_bytes(&sig_bytes).unwrap();
-                        let serialized = serde_json::to_string(&request).unwrap();
-                        let hash = hash_message(&serialized);
+                        let (user_pk, hash) = match parse_user_request(&request) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                warn!(
+                                    node_index,
+                                    "Failed to parse user request {:?}: {}", request, e
+                                );
+                                continue;
+                            }
+                        };
                         if !verify_signature(&user_pk, hash, signature) {
-                            warn!("Invalid signature from user {}", request.user_public_key);
+                            warn!(
+                                node_index,
+                                "Invalid signature from user {}", request.user_public_key
+                            );
                             continue;
                         }
 
@@ -140,18 +152,18 @@ impl Node {
                         // Record vote
                         let Entry::Occupied(mut votes_entry) = self.votes.entry(request_hash)
                         else {
-                            debug!(node_index, "Voting closed for request {:?}", request_hash);
+                            debug!(node_index, "Voting closed for request");
                             continue;
                         };
 
                         let vote_set = votes_entry.get_mut();
                         vote_set.insert((
-                            hex::encode(self.nodes[self.index].to_bytes()),
+                            hex::encode(self.nodes[peer_id].to_bytes()),
                             hex::encode(signature.to_bytes()),
                         ));
 
                         // Broadcast Certificate if enough Acks
-                        if vote_set.len() > self.nodes.len() * 3 / 2 {
+                        if vote_set.len() >= self.nodes.len() * 2 / 3 {
                             let participant_pks: Vec<PublicKey> = vote_set
                                 .iter()
                                 .map(|(pk_hex, _)| {
@@ -169,6 +181,11 @@ impl Node {
                             let sigs: Vec<&Signature> = sigs.iter().collect();
                             let aggregated_sig = aggregate_signatures(&sigs).unwrap();
 
+                            debug!(
+                                node_index,
+                                "Broadcasting Certificate for request with {}",
+                                vote_set.len(),
+                            );
                             let cert_msg = Message::Certificate {
                                 request_hash,
                                 participants: participant_pks,
@@ -187,6 +204,11 @@ impl Node {
                         signature,
                     } => {
                         debug!(node_index, "Received Certificate from {}", peer_id);
+                        if peer_id >= self.nodes.len() {
+                            warn!(node_index, "Invalid peer_id {}", peer_id);
+                            continue;
+                        }
+
                         let Some(request) = self.pending.get(&request_hash) else {
                             warn!(node_index, "Certificate for unknown request");
                             continue;
@@ -197,8 +219,13 @@ impl Node {
                             .iter()
                             .map(|pk| hex::encode(pk.to_bytes()))
                             .collect();
-                        if participant_set.len() < self.nodes.len() * 3 / 2 {
-                            warn!(node_index, "Not enough participants in Certificate");
+                        if participant_set.len() < self.nodes.len() * 2 / 3 {
+                            warn!(
+                                node_index,
+                                "Not enough participants in Certificate: got {}, need {}",
+                                participant_set.len(),
+                                self.nodes.len() * 2 / 3
+                            );
                             continue;
                         }
                         if !participant_set.is_subset(&self.nodes_set) {
@@ -242,22 +269,56 @@ impl Node {
                         }
 
                         // Apply the Update
-                        self.db.insert(
-                            request.user_public_key.clone(),
-                            (request.nonce + 1, request.update.clone()),
-                        );
-                        debug!(
+                        db_entry.insert((request.nonce + 1, request.update.clone()));
+                        info!(
                             node_index,
                             "Applied update for user {}: nonce {}, dna {}",
                             request.user_public_key,
                             request.nonce,
                             request.update
                         );
-
-                        self.pending.remove(&request_hash);
                     }
 
-                    Message::Quit => {
+                    Message::DebugUserRequestArrived { request, signature } => {
+                        debug!(node_index, "Received DebugUserRequest from {}", peer_id);
+                        if !self.users.contains(&request.user_public_key) {
+                            warn!(node_index, "Unknown user {}", request.user_public_key);
+                            continue;
+                        }
+                        // if peer_id >= self.nodes.len() {
+                        //     warn!(node_index, "Invalid peer_id {}", peer_id);
+                        //     continue;
+                        // }
+
+                        // Verify Signature
+                        let (user_pk, hash) = match parse_user_request(&request) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                warn!(
+                                    node_index,
+                                    "Failed to parse user request {:?}: {}", request, e
+                                );
+                                continue;
+                            }
+                        };
+                        if !verify_signature(&user_pk, hash, signature) {
+                            warn!(
+                                node_index,
+                                "Invalid signature from user {}", request.user_public_key
+                            );
+                            continue;
+                        }
+
+                        // Begin the voting process
+                        self.pending.insert(hash, request.clone());
+                        self.votes.insert(hash, HashSet::new());
+
+                        // Broadcast the request to all nodes
+                        let user_update_msg = Message::UserUpdate { request, signature };
+                        net.broadcast(user_update_msg).await.unwrap();
+                    }
+
+                    Message::DebugQuit => {
                         debug!(node_index, "Received Quit message from {}", peer_id);
                         break;
                     }
@@ -266,4 +327,16 @@ impl Node {
         }
         info!(node_index, "Node shutting down");
     }
+}
+
+pub fn parse_user_request(request: &UserUpdateRequest) -> anyhow::Result<(PublicKey, Hash)> {
+    let pk_bytes = hex::decode(&request.user_public_key)
+        .map_err(|e| anyhow!("invalid hex in user_public_key: {}", e))?;
+    let pk = PublicKey::from_bytes(&pk_bytes)
+        .map_err(|e| anyhow!("invalid public key bytes: {:?}", e))?;
+
+    let serialized = serde_json::to_string(&request).unwrap();
+    let hash = hash_message(&serialized);
+
+    Ok((pk, hash))
 }
