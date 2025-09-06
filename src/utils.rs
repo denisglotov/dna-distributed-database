@@ -51,8 +51,7 @@ pub fn sign_message(sk: &SecretKey, hash: Hash) -> Signature {
     sk.sign(&hash, DST, AUG)
 }
 
-pub fn verify_signature(pk: &PublicKey, message: &str, signature: Signature) -> bool {
-    let hash = hash_message(message);
+pub fn verify_signature(pk: &PublicKey, hash: Hash, signature: Signature) -> bool {
     let result = signature.verify(true, &hash, DST, AUG, pk, true);
     result == blst::BLST_ERROR::BLST_SUCCESS
 }
@@ -101,14 +100,14 @@ mod tests {
     #[test]
     fn sign_and_verify() -> anyhow::Result<()> {
         let (sk, pk) = gen_key(None, None).expect("key generation failed");
-        let msg = "hello distributed dna";
-        let sig = sign_message(&sk, hash_message(msg));
+        let hash = hash_message("hello distributed dna");
+        let sig = sign_message(&sk, hash);
 
-        let res = verify_signature(&pk, msg, sig);
+        let res = verify_signature(&pk, hash, sig);
         assert!(res, "correct signature verification failed");
 
-        let bad_msg = "hello altered message";
-        let res = verify_signature(&pk, bad_msg, sig);
+        let bad_hash = hash_message("hello altered message");
+        let res = verify_signature(&pk, bad_hash, sig);
         assert!(!res, "incorrect signature verification passed");
 
         Ok(())
