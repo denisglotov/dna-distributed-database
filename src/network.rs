@@ -2,6 +2,8 @@ use async_trait::async_trait;
 use blst::min_pk::{PublicKey, Signature};
 use serde::{Deserialize, Serialize};
 
+use crate::utils::Hash;
+
 pub type PeerId = usize; // later libp2p::PeerId
 pub type Nonce = u64;
 pub type Dna = String; // user data
@@ -20,11 +22,11 @@ pub enum Message {
         request: UserUpdateRequest,
     },
     Ack {
-        request_hash: Vec<u8>,
+        request_hash: Hash,
         signature: Signature,
     },
     Certificate {
-        request_hash: Vec<u8>,
+        request_hash: Hash,
         participants: Vec<PublicKey>,
         signature: Signature,
     },

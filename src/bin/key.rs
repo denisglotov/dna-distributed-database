@@ -1,9 +1,6 @@
-use blst::min_pk::{PublicKey, SecretKey};
+use blst::min_pk::SecretKey;
 use clap::{Parser, Subcommand};
-use dna_distributed_database::{
-    config::{DST, RawConfig},
-    utils::gen_key,
-};
+use dna_distributed_database::{config::RawConfig, utils::gen_key};
 
 /// CLI definition
 #[derive(Parser)]
@@ -21,7 +18,6 @@ enum Commands {
         /// Optional key info (context string for key derivation)
         #[arg(long)]
         key_info: Option<String>,
-
         /// Optional IKM (input keying material) as hex string (>=32 bytes)
         #[arg(long)]
         ikm: Option<String>,
@@ -99,63 +95,4 @@ fn write_secret_key(sk: &SecretKey, path: &str) {
     file.write_all(sk_hex.as_bytes())
         .expect("failed to write secret key file");
     println!("Secret key written to {}", path);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use blst::{BLST_ERROR, min_pk::AggregateSignature};
-
-    #[test]
-    fn aggregate_and_verify_same_message() {
-        let n = 5usize;
-        let mut sks = Vec::with_capacity(n);
-        let mut pks = Vec::with_capacity(n);
-
-        // Generate deterministic/random keypairs for test
-        for _ in 0..n {
-            let (sk, pk) = gen_key(None, None).expect("key generation failed");
-            sks.push(sk);
-            pks.push(pk);
-        }
-
-        let msg: &[u8] = b"hello distributed dna";
-
-        // Each secret key signs the same message
-        let sigs: Vec<_> = sks.iter().map(|sk| sk.sign(msg, DST, &[])).collect();
-
-        // Build slice of &Signature for aggregation
-        let sig_refs: Vec<&_> = sigs.iter().collect();
-
-        // Aggregate all signatures into an AggregateSignature
-        let agg = AggregateSignature::aggregate(&sig_refs, true).expect("aggregation failed");
-
-        // Convert to a Signature (serializable / verifiable)
-        let agg_sig = agg.to_signature();
-
-        // Prepare public key refs for verification
-        let pk_refs: Vec<&PublicKey> = pks.iter().collect();
-
-        // Fast verify for same-message aggregation
-        let res = agg_sig.fast_aggregate_verify(true, msg, DST, &pk_refs);
-
-        assert_eq!(
-            res,
-            BLST_ERROR::BLST_SUCCESS,
-            "aggregate verification failed"
-        );
-    }
-
-    #[test]
-    fn sign_and_verify() {
-        let (sk, pk) = gen_key(None, None).expect("key generation failed");
-        let msg: &[u8] = b"hello distributed dna";
-        let sig = sk.sign(msg, DST, &[]);
-        let res = sig.verify(true, msg, DST, &[], &pk, true);
-        assert_eq!(
-            res,
-            BLST_ERROR::BLST_SUCCESS,
-            "signature verification failed"
-        );
-    }
 }

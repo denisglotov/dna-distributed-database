@@ -3,9 +3,9 @@ use dashmap::{DashMap, Entry};
 use tracing::{debug, info, warn};
 
 use crate::{
-    config::{Config, DST},
+    config::Config,
     network::{Dna, Message, Network, Nonce},
-    utils::hash_message,
+    utils::{hash_message, sign_message, verify_signature},
 };
 
 pub struct Node {
@@ -44,9 +44,7 @@ impl Node {
                         let signature = Signature::from_bytes(&sig_bytes).unwrap();
                         let serialized = serde_json::to_string(&request).unwrap();
                         let hash = hash_message(&serialized);
-                        if signature.verify(true, &hash, DST, &[], &user_pk, true)
-                            != blst::BLST_ERROR::BLST_SUCCESS
-                        {
+                        if !verify_signature(&user_pk, &serialized, signature) {
                             warn!("Invalid signature from user {}", request.user_public_key);
                             continue;
                         }
@@ -82,7 +80,7 @@ impl Node {
                         // Send Ack
                         let ack_msg = Message::Ack {
                             request_hash: hash.clone(),
-                            signature: self.private_key.sign(&hash, DST, &[]),
+                            signature: sign_message(&self.private_key, hash),
                         };
                         net.send(peer_id, ack_msg).await.unwrap();
                     }

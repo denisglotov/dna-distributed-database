@@ -2,10 +2,6 @@ use anyhow::anyhow;
 use blst::min_pk::{PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
 
-// For BLS signatures, the domain separation tag.
-// DST per IETF BLS; use the canonical DST for G2 (min_pk).
-pub const DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_";
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RawConfig {
     pub nodes: Vec<String>, // list of node public keys in hex
