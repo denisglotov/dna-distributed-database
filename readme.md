@@ -10,7 +10,7 @@ This project simulates a distributed DNA database using Rust.
 2. Pluggable network implementaion `MockNetwork` that implements trait `Network` and can be easily replaced with a real implementation.
 3. CLI tool `key` for crypto key generation.
 4. REST API server for sending requests and queries to nodes.
-5. [Swagger UI](2) for the REST API.
+5. Swagger UI for the REST API.
 
 ## Commands:
 
@@ -48,7 +48,7 @@ curl -X POST http://localhost:3000/api/3/update -H "Content-Type: application/js
 ```
 :point_right: For convenience, the server will sign the request with the private key from config.
 
-Alternatively use [Swagger UI](2) to interact with the API.
+Alternatively use [Swagger UI][2] to interact with the API.
 
 [1]: ./config
 [2]: http://localhost:3000/swagger-ui/
