@@ -15,6 +15,7 @@ use crate::{
 
 pub struct ServerState {
     admin: MockNetwork,
+    users: Vec<String>,
 }
 
 async fn update_node(
@@ -26,19 +27,25 @@ async fn update_node(
         "Server: Update request for node {}: {}",
         node, payload.update
     );
-    let (request, signature) = create_user_update_request(
-        node,
-        payload.nonce,
-        &payload.update,
-        parse_public_key(&payload.user_public_key).map_err(|e| {
-            error!("Invalid public key: {}", e);
-            StatusCode::BAD_REQUEST
-        })?,
-    )
-    .map_err(|e| {
-        error!("Failed to create user update request: {}", e);
+    let user_public_key = parse_public_key(&payload.user_public_key).map_err(|e| {
+        error!("Invalid public key: {}", e);
         StatusCode::BAD_REQUEST
     })?;
+    let user = state
+        .users
+        .iter()
+        .position(|pk| pk == &payload.user_public_key)
+        .ok_or_else(|| {
+            error!("Unknown user public key: {}", payload.user_public_key);
+            StatusCode::BAD_REQUEST
+        })?;
+    let (request, signature) =
+        create_user_update_request(user, payload.nonce, &payload.update, user_public_key).map_err(
+            |e| {
+                error!("Failed to create user update request: {}", e);
+                StatusCode::BAD_REQUEST
+            },
+        )?;
     state
         .admin
         .send(
@@ -81,8 +88,8 @@ async fn query_node(
         .and_then(|dna_opt| dna_opt.map(|dna| Json(dna)).ok_or(StatusCode::NOT_FOUND))
 }
 
-pub async fn server_start(admin: MockNetwork) -> anyhow::Result<()> {
-    let state = Arc::new(ServerState { admin });
+pub async fn server_start(admin: MockNetwork, users: Vec<String>) -> anyhow::Result<()> {
+    let state = Arc::new(ServerState { admin, users });
     let app = Router::new()
         .route("/api/{node}/update", post(update_node))
         .route("/api/{node}/query", get(query_node))

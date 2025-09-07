@@ -5,7 +5,10 @@ mod node;
 mod server;
 mod utils;
 
-use crate::{config::load_config, mock_network::create_nodes_network, server::server_start};
+use crate::{
+    config::load_config, mock_network::create_nodes_network, server::server_start,
+    utils::stringify_public_key,
+};
 use tracing::info;
 
 #[tokio::main]
@@ -21,7 +24,12 @@ async fn main() -> anyhow::Result<()> {
 
     let (tasks, admin) = create_nodes_network(&config).await?;
 
-    server_start(admin).await?;
+    let users = config
+        .users
+        .iter()
+        .map(|u| stringify_public_key(u))
+        .collect();
+    server_start(admin, users).await?;
 
     for t in tasks {
         let _ = t.await;

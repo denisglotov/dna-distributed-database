@@ -44,6 +44,10 @@ pub fn parse_public_key(hex_str: &str) -> anyhow::Result<PublicKey> {
     PublicKey::from_bytes(&bytes).map_err(|e| anyhow!("failed to parse public key: {:?}", e))
 }
 
+pub fn stringify_public_key(pk: &PublicKey) -> String {
+    hex::encode(pk.to_bytes())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
