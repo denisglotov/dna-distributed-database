@@ -5,16 +5,14 @@ mod node;
 mod server;
 mod utils;
 
-use crate::{
-    config::load_config, mock_network::create_nodes_network, server::server_start,
-    utils::stringify_public_key,
-};
+use crate::{config::load_config, mock_network::create_nodes_network, server::server_start};
 use tracing::info;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
+    // Load configuration
     let config = load_config("config/config.yaml")?;
     info!(
         "Loaded config for {} nodes and {} users",
@@ -22,15 +20,13 @@ async fn main() -> anyhow::Result<()> {
         config.users.len()
     );
 
+    // Create the network of nodes and admin interface
     let (tasks, admin) = create_nodes_network(&config).await?;
 
-    let users = config
-        .users
-        .iter()
-        .map(|u| stringify_public_key(u))
-        .collect();
-    server_start(admin, users).await?;
+    // Start the server
+    server_start(admin, &config).await?;
 
+    // Wait for all tasks to complete
     for t in tasks {
         let _ = t.await;
     }

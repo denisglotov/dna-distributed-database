@@ -4,18 +4,21 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio::time::timeout;
 use tracing::{error, info};
 
 use crate::{
+    config::Config,
     mock_network::{MockNetwork, create_user_update_request, wait_for_query_response},
     network::{Message, Network, UserQueryRequest, UserUpdateRequest},
-    utils::parse_public_key,
+    utils::{parse_public_key, stringify_public_key},
 };
 
 pub struct ServerState {
     admin: MockNetwork,
     users: Vec<String>,
+    nodes_len: usize,
 }
 
 async fn update_node(
@@ -27,6 +30,10 @@ async fn update_node(
         "Server: Update request for node {}: {}",
         node, payload.update
     );
+    if node >= state.nodes_len {
+        error!("Invalid node index: {}", node);
+        return Err(StatusCode::BAD_REQUEST);
+    }
     let user_public_key = parse_public_key(&payload.user_public_key).map_err(|e| {
         error!("Invalid public key: {}", e);
         StatusCode::BAD_REQUEST
@@ -70,6 +77,10 @@ async fn query_node(
         error!("Invalid public key: {}", e);
         StatusCode::BAD_REQUEST
     })?;
+    if node >= state.nodes_len {
+        error!("Invalid node index: {}", node);
+        return Err(StatusCode::BAD_REQUEST);
+    }
     state
         .admin
         .send(node, Message::AdminQueryStateRequest { user_public_key })
@@ -78,18 +89,38 @@ async fn query_node(
             error!("Failed to send query to node {}: {}", node, e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    wait_for_query_response(&state.admin, user_public_key)
-        .await
-        .map_err(|e| {
+    timeout(
+        Duration::from_secs(1),
+        wait_for_query_response(&state.admin, user_public_key),
+    )
+    .await
+    .map_err(|e| {
+        error!("Failed to receive query response: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
+    .and_then(|res| {
+        res.map_err(|e| {
             error!("Failed to receive query response: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })
-        .and_then(|dna_opt| dna_opt.map(|dna| Json(dna)).ok_or(StatusCode::NOT_FOUND))
+    })
+    .map(|dna_opt| {
+        let dna = dna_opt.unwrap_or_else(|| "No data".to_string());
+        Json(dna)
+    })
 }
 
-pub async fn server_start(admin: MockNetwork, users: Vec<String>) -> anyhow::Result<()> {
-    let state = Arc::new(ServerState { admin, users });
+pub async fn server_start(admin: MockNetwork, config: &Config) -> anyhow::Result<()> {
+    let users = config
+        .users
+        .iter()
+        .map(|u| stringify_public_key(u))
+        .collect();
+    let state = Arc::new(ServerState {
+        admin,
+        users,
+        nodes_len: config.nodes.len(),
+    });
     let app = Router::new()
         .route("/api/{node}/update", post(update_node))
         .route("/api/{node}/query", get(query_node))

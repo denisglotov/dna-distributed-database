@@ -102,8 +102,6 @@ pub async fn wait_for_query_response(
                     return Ok(dna);
                 }
             }
-        } else {
-            return Err(anyhow::anyhow!("No response received"));
         }
     }
 }
@@ -160,7 +158,6 @@ mod tests {
                 },
             )
             .await?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         assert_eq!(
             wait_for_query_response(&admin, config.users[0]).await?,
             Some("ABCDDCBA".to_string())
@@ -182,7 +179,6 @@ mod tests {
                 },
             )
             .await?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         assert_eq!(
             wait_for_query_response(&admin, config.users[0]).await?,
             Some("AAAA".to_string())
