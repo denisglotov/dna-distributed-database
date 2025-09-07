@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use blst::min_pk::{PublicKey, Signature};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::utils::Hash;
 
@@ -8,14 +9,14 @@ pub type PeerId = usize; // later libp2p::PeerId
 pub type Nonce = u64;
 pub type Dna = String; // user data
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UserUpdateRequest {
     pub user_public_key: String,
     pub nonce: Nonce,
     pub update: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UserQueryRequest {
     pub user_public_key: String,
 }

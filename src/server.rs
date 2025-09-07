@@ -2,11 +2,13 @@ use axum::{
     Router,
     extract::{Json, Path, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::post,
 };
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::time::timeout;
 use tracing::{error, info};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     config::Config,
@@ -21,6 +23,19 @@ pub struct ServerState {
     nodes_len: usize,
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/{node}/update",
+    request_body = UserUpdateRequest,
+    params(
+        ("node" = usize, Path, description = "Node number to send the update to"),
+    ),
+    responses(
+        (status = 200, description = "Request accepted"),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn update_node(
     State(state): State<Arc<ServerState>>,
     Path(node): Path<usize>,
@@ -67,6 +82,19 @@ async fn update_node(
     Ok(())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/{node}/query",
+    request_body = UserQueryRequest,
+    params(
+        ("node" = usize, Path, description = "Node number to query"),
+    ),
+    responses(
+        (status = 200, description = "Query result", body = String),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Internal server error"),
+    )
+)]
 async fn query_node(
     State(state): State<Arc<ServerState>>,
     Path(node): Path<usize>,
@@ -110,6 +138,17 @@ async fn query_node(
     })
 }
 
+/// API documentation
+#[derive(OpenApi)]
+#[openapi(
+    paths(update_node, query_node),
+    components(schemas(UserUpdateRequest, UserQueryRequest)),
+    tags(
+        (name = "dna", description = "DNA database operations")
+    )
+)]
+struct ApiDoc;
+
 pub async fn server_start(admin: MockNetwork, config: &Config) -> anyhow::Result<()> {
     let users = config.users.iter().map(stringify_public_key).collect();
     let state = Arc::new(ServerState {
@@ -119,7 +158,8 @@ pub async fn server_start(admin: MockNetwork, config: &Config) -> anyhow::Result
     });
     let app = Router::new()
         .route("/api/{node}/update", post(update_node))
-        .route("/api/{node}/query", get(query_node))
+        .route("/api/{node}/query", post(query_node))
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .with_state(state.clone());
 
     // Set server address from environment variable or default to localhost:3000
