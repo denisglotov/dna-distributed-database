@@ -111,11 +111,7 @@ async fn query_node(
 }
 
 pub async fn server_start(admin: MockNetwork, config: &Config) -> anyhow::Result<()> {
-    let users = config
-        .users
-        .iter()
-        .map(|u| stringify_public_key(u))
-        .collect();
+    let users = config.users.iter().map(stringify_public_key).collect();
     let state = Arc::new(ServerState {
         admin,
         users,
