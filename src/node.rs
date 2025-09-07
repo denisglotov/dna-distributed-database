@@ -285,10 +285,10 @@ impl Node {
                             warn!(node_index, "Unknown user {}", request.user_public_key);
                             continue;
                         }
-                        // if peer_id >= self.nodes.len() {
-                        //     warn!(node_index, "Invalid peer_id {}", peer_id);
-                        //     continue;
-                        // }
+                        if peer_id != self.nodes.len() {
+                            warn!(node_index, "Only admin can request that!");
+                            continue;
+                        }
 
                         // Verify Signature
                         let (user_pk, hash) = match parse_user_request(&request) {
