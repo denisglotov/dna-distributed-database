@@ -92,6 +92,7 @@ pub async fn wait_for_query_response(
     user_public_key: blst::min_pk::PublicKey,
 ) -> anyhow::Result<Option<Dna>> {
     loop {
+
         if let Some((
             _,
             Message::AdminQueryStateResponse {
