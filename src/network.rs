@@ -15,6 +15,11 @@ pub struct UserUpdateRequest {
     pub update: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserQueryRequest {
+    pub user_public_key: String,
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     UserUpdate {

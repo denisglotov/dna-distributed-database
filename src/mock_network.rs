@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use blst::min_pk::Signature;
 use tokio::{
     sync::{Mutex, mpsc},
     task::{self, JoinHandle},
@@ -8,8 +9,9 @@ use tokio::{
 
 use crate::{
     config::{Config, load_private_key},
-    network::{Message, Network, PeerId},
+    network::{self, Dna, Message, Network, PeerId, UserUpdateRequest},
     node::Node,
+    utils::{hash_message, sign_message},
 };
 
 type MockNetworkPacket = (PeerId, Message);
@@ -85,61 +87,53 @@ pub async fn create_nodes_network(
     Ok((tasks, admin))
 }
 
-#[cfg(test)]
-mod tests {
-    use blst::min_pk::Signature;
-
-    use crate::{
-        config::load_config,
-        network::{self, Dna, UserUpdateRequest},
-        utils::{hash_message, sign_message},
-    };
-
-    use super::*;
-
-    fn sign_request(serialized: &str, node_index: usize) -> anyhow::Result<Signature> {
-        let hash = hash_message(serialized);
-        let private_key_path = format!("config/config-user-{}-sk.hex", node_index);
-        let private_key = load_private_key(&private_key_path)?;
-        Ok(sign_message(&private_key, hash))
-    }
-
-    async fn wait_for_query_response(
-        admin: &MockNetwork,
-        user_public_key: blst::min_pk::PublicKey,
-    ) -> anyhow::Result<Option<Dna>> {
-        loop {
-            if let Some((_, msg)) = admin.receive().await {
-                if let Message::AdminQueryStateResponse {
-                    user_public_key: pk,
-                    dna,
-                } = msg
-                {
-                    if pk == user_public_key {
-                        return Ok(dna);
-                    }
+pub async fn wait_for_query_response(
+    admin: &MockNetwork,
+    user_public_key: blst::min_pk::PublicKey,
+) -> anyhow::Result<Option<Dna>> {
+    loop {
+        if let Some((_, msg)) = admin.receive().await {
+            if let Message::AdminQueryStateResponse {
+                user_public_key: pk,
+                dna,
+            } = msg
+            {
+                if pk == user_public_key {
+                    return Ok(dna);
                 }
-            } else {
-                return Err(anyhow::anyhow!("No response received"));
             }
         }
     }
+}
 
-    fn create_user_update_request(
-        user_index: usize,
-        nonce: u64,
-        update: &str,
-        config: &Config,
-    ) -> anyhow::Result<(UserUpdateRequest, Signature)> {
-        let request = network::UserUpdateRequest {
-            user_public_key: hex::encode(config.users[user_index].to_bytes()),
-            nonce,
-            update: update.to_string(),
-        };
-        let serialized_request = serde_json::to_string(&request)?;
-        let signature = sign_request(&serialized_request, user_index)?;
-        Ok((request, signature))
-    }
+fn sign_request(serialized: &str, node_index: usize) -> anyhow::Result<Signature> {
+    let hash = hash_message(serialized);
+    let private_key_path = format!("config/config-user-{}-sk.hex", node_index);
+    let private_key = load_private_key(&private_key_path)?;
+    Ok(sign_message(&private_key, hash))
+}
+
+pub fn create_user_update_request(
+    user_index: usize,
+    nonce: u64,
+    update: &str,
+    user_public_key: blst::min_pk::PublicKey,
+) -> anyhow::Result<(UserUpdateRequest, Signature)> {
+    let request = network::UserUpdateRequest {
+        user_public_key: hex::encode(user_public_key.to_bytes()),
+        nonce,
+        update: update.to_string(),
+    };
+    let serialized_request = serde_json::to_string(&request)?;
+    let signature = sign_request(&serialized_request, user_index)?;
+    Ok((request, signature))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::load_config;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_mock_network() -> anyhow::Result<()> {
@@ -149,7 +143,7 @@ mod tests {
         let (tasks, admin) = create_nodes_network(&config).await?;
 
         // User #0 sends an update to node #0
-        let (request, signature) = create_user_update_request(0, 0, "ABCDDCBA", &config)?;
+        let (request, signature) = create_user_update_request(0, 0, "ABCDDCBA", config.users[0])?;
         admin
             .send(0, Message::AdminUserRequestArrived { request, signature })
             .await?;
@@ -164,14 +158,13 @@ mod tests {
                 },
             )
             .await?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         assert_eq!(
             wait_for_query_response(&admin, config.users[0]).await?,
             Some("ABCDDCBA".to_string())
         );
 
         // User #0 sends another update to node #1
-        let (request, signature) = create_user_update_request(0, 1, "AAAA", &config)?;
+        let (request, signature) = create_user_update_request(0, 1, "AAAA", config.users[0])?;
         admin
             .send(1, Message::AdminUserRequestArrived { request, signature })
             .await?;
@@ -186,7 +179,6 @@ mod tests {
                 },
             )
             .await?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         assert_eq!(
             wait_for_query_response(&admin, config.users[0]).await?,
             Some("AAAA".to_string())
