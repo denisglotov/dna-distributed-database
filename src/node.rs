@@ -6,7 +6,7 @@ use dashmap::{DashMap, Entry};
 use tracing::{debug, info, warn};
 
 use crate::{
-    config::Config,
+    config::{Config, node_threshold},
     network::{Dna, Message, Network, Nonce, UserUpdateRequest},
     utils::{
         Hash, aggregate_signatures, hash_message, sign_message, verify_aggregated_signature,
@@ -163,7 +163,7 @@ impl Node {
                         ));
 
                         // Broadcast Certificate if enough Acks
-                        if vote_set.len() >= self.nodes.len() * 2 / 3 {
+                        if vote_set.len() >= node_threshold(self.nodes.len()) {
                             let participant_pks: Vec<PublicKey> = vote_set
                                 .iter()
                                 .map(|(pk_hex, _)| {
@@ -219,12 +219,12 @@ impl Node {
                             .iter()
                             .map(|pk| hex::encode(pk.to_bytes()))
                             .collect();
-                        if participant_set.len() < self.nodes.len() * 2 / 3 {
+                        if participant_set.len() < node_threshold(self.nodes.len()) {
                             warn!(
                                 node_index,
                                 "Not enough participants in Certificate: got {}, need {}",
                                 participant_set.len(),
-                                self.nodes.len() * 2 / 3
+                                node_threshold(self.nodes.len())
                             );
                             continue;
                         }
@@ -279,7 +279,7 @@ impl Node {
                         );
                     }
 
-                    Message::DebugUserRequestArrived { request, signature } => {
+                    Message::AdminUserRequestArrived { request, signature } => {
                         debug!(node_index, "Received DebugUserRequest from {}", peer_id);
                         if !self.users.contains(&request.user_public_key) {
                             warn!(node_index, "Unknown user {}", request.user_public_key);
@@ -318,7 +318,28 @@ impl Node {
                         net.broadcast(user_update_msg).await.unwrap();
                     }
 
-                    Message::DebugQuit => {
+                    Message::AdminQueryStateRequest { user_public_key } => {
+                        debug!(node_index, "Received QueryStateRequest from {}", peer_id);
+                        if peer_id != self.nodes.len() {
+                            warn!(node_index, "QueryStateRequest only allowed from admin");
+                            continue;
+                        }
+                        let dna = self
+                            .db
+                            .get(&hex::encode(user_public_key.to_bytes()))
+                            .map(|entry| entry.value().1.clone());
+                        let response_msg = Message::AdminQueryStateResponse {
+                            user_public_key,
+                            dna,
+                        };
+                        net.send(peer_id, response_msg).await.unwrap();
+                    }
+
+                    Message::AdminQueryStateResponse { .. } => {
+                        // Nodes do not expect to receive this message
+                    }
+
+                    Message::AdminQuit => {
                         debug!(node_index, "Received Quit message from {}", peer_id);
                         break;
                     }

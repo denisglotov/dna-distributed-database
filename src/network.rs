@@ -30,11 +30,18 @@ pub enum Message {
         participants: Vec<PublicKey>,
         signature: Signature,
     },
-    DebugUserRequestArrived {
+    AdminUserRequestArrived {
         request: UserUpdateRequest,
         signature: Signature,
     },
-    DebugQuit,
+    AdminQueryStateRequest {
+        user_public_key: PublicKey,
+    },
+    AdminQueryStateResponse {
+        user_public_key: PublicKey,
+        dna: Option<Dna>,
+    },
+    AdminQuit,
 }
 
 #[async_trait]

@@ -46,3 +46,8 @@ pub fn load_private_key(file_path: &str) -> anyhow::Result<SecretKey> {
         .map_err(|e| anyhow!("Failed to decode hex private key: {}", e))?;
     SecretKey::from_bytes(&key_bytes).map_err(|_| anyhow!("Invalid private key bytes"))
 }
+
+/// Ceil of 2/3 of the nodes
+pub fn node_threshold(num_nodes: usize) -> usize {
+    (num_nodes * 2 + 2) / 3
+}
