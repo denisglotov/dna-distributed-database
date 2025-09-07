@@ -39,6 +39,11 @@ pub fn verify_aggregated_signature(pks: &[&PublicKey], hash: Hash, signature: &S
     result == BLST_ERROR::BLST_SUCCESS
 }
 
+pub fn parse_public_key(hex_str: &str) -> anyhow::Result<PublicKey> {
+    let bytes = hex::decode(hex_str).map_err(|e| anyhow!("invalid hex for public key: {}", e))?;
+    PublicKey::from_bytes(&bytes).map_err(|e| anyhow!("failed to parse public key: {:?}", e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -280,7 +280,7 @@ impl Node {
                     }
 
                     Message::AdminUserRequestArrived { request, signature } => {
-                        debug!(node_index, "Received DebugUserRequest from {}", peer_id);
+                        debug!(node_index, "Received AdminUserRequest from {}", peer_id);
                         if !self.users.contains(&request.user_public_key) {
                             warn!(node_index, "Unknown user {}", request.user_public_key);
                             continue;
@@ -319,7 +319,10 @@ impl Node {
                     }
 
                     Message::AdminQueryStateRequest { user_public_key } => {
-                        debug!(node_index, "Received QueryStateRequest from {}", peer_id);
+                        debug!(
+                            node_index,
+                            "Received AdminQueryStateRequest from {}", peer_id
+                        );
                         if peer_id != self.nodes.len() {
                             warn!(node_index, "QueryStateRequest only allowed from admin");
                             continue;
@@ -340,7 +343,7 @@ impl Node {
                     }
 
                     Message::AdminQuit => {
-                        debug!(node_index, "Received Quit message from {}", peer_id);
+                        debug!(node_index, "Received AdminQuit message from {}", peer_id);
                         break;
                     }
                 }
