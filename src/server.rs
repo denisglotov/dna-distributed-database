@@ -2,7 +2,7 @@ use axum::{
     Router,
     extract::{Json, Path, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::post,
 };
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::time::timeout;
