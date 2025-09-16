@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-pub struct Node {
+pub struct Node<N: Network> {
     db: DashMap<String, (Nonce, Dna)>, // user_public_key -> (nonce, dna)
     pending: DashMap<Hash, UserUpdateRequest>, // request_hash -> request, TODO: cleanup
     votes: DashMap<Hash, HashSet<(String, String)>>, // request_hash -> {(node_pk, signature)}
@@ -22,11 +22,12 @@ pub struct Node {
     nodes: Vec<PublicKey>,             // list of node public keys
     users: HashSet<String>,            // set of user public keys
     private_key: SecretKey,            // node's private key
+    net: N,                            // network interface
     index: usize,                      // node index in config
 }
 
-impl Node {
-    pub fn new(private_key: SecretKey, config: Config, index: usize) -> Self {
+impl<N: Network> Node<N> {
+    pub fn new(private_key: SecretKey, config: Config, net: N, index: usize) -> Self {
         let pk = private_key.sk_to_pk();
         assert_eq!(
             pk, config.nodes[index],
@@ -50,15 +51,16 @@ impl Node {
             nodes: config.nodes,
             users,
             private_key,
+            net,
             index,
         }
     }
 
-    pub async fn run(&self, net: &dyn Network) {
+    pub async fn run(&self) {
         let node_index = self.index;
         info!(node_index, "Node started");
         loop {
-            if let Some((peer_id, msg)) = net.receive().await {
+            if let Some((peer_id, msg)) = self.net.receive().await {
                 match msg {
                     Message::UserUpdate { request, signature } => {
                         debug!(node_index, "Received UserUpdate from {}", peer_id);
@@ -126,7 +128,7 @@ impl Node {
                             request_hash: hash,
                             signature: sign_message(&self.private_key, hash),
                         };
-                        net.send(peer_id, ack_msg).await.unwrap();
+                        self.net.send(peer_id, ack_msg).await.unwrap();
                     }
 
                     Message::Ack {
@@ -191,7 +193,7 @@ impl Node {
                                 participants: participant_pks,
                                 signature: aggregated_sig,
                             };
-                            net.broadcast(cert_msg).await.unwrap();
+                            self.net.broadcast(cert_msg).await.unwrap();
 
                             // Close the voting
                             votes_entry.remove();
@@ -315,7 +317,7 @@ impl Node {
 
                         // Broadcast the request to all nodes
                         let user_update_msg = Message::UserUpdate { request, signature };
-                        net.broadcast(user_update_msg).await.unwrap();
+                        self.net.broadcast(user_update_msg).await.unwrap();
                     }
 
                     Message::AdminQueryStateRequest { user_public_key } => {
@@ -335,7 +337,7 @@ impl Node {
                             user_public_key,
                             dna,
                         };
-                        net.send(peer_id, response_msg).await.unwrap();
+                        self.net.send(peer_id, response_msg).await.unwrap();
                     }
 
                     Message::AdminQueryStateResponse { .. } => {
