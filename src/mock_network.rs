@@ -81,8 +81,8 @@ pub async fn create_nodes_network(
         let net = MockNetwork::new(i, peer_txs.clone(), peer.take());
         let private_key_path = format!("config/config-node-{}-sk.hex", i);
         let private_key = load_private_key(&private_key_path)?;
-        let node = Node::new(private_key, config.clone(), i);
-        tasks.push(task::spawn(async move { node.run(&net).await }));
+        let node = Node::new(private_key, config.clone(), net, i);
+        tasks.push(task::spawn(async move { node.run().await }));
     }
     Ok((tasks, admin))
 }
@@ -92,7 +92,6 @@ pub async fn wait_for_query_response(
     user_public_key: blst::min_pk::PublicKey,
 ) -> anyhow::Result<Option<Dna>> {
     loop {
-
         if let Some((
             _,
             Message::AdminQueryStateResponse {
